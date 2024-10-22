@@ -15,9 +15,10 @@ library(purrr)
 library(phyloseq)
 library(ggrepel)
 library(ggpubr)
+library(microbiome)
 library(microViz)
 
-setwd('~/Desktop/CHA')
+setwd('~/Desktop/CanadianHighArcticMicrobiome')
 
 ##########################################################
 ####### 1. data preprocessing ############################ 
@@ -150,7 +151,7 @@ ggrare <- function(physeq_object, step = 10, label = NULL, color = NULL, plot = 
 
 rare_curves <- function(all_data){
     #Rarefaction curve before filtering
-    rare_curves_data <- ggrare(all_data, step = 1000, plot = TRUE, parallel = FALSE, se = FALSE)
+    rare_curves_data <- ggrare(all_data, step = 1000, plot = FALSE, parallel = FALSE, se = FALSE)
     rare_curves_plot <- rare_curves_data +
       theme_classic() +
       facet_wrap(~factor(Layer, c("Upper", "Lower"))) +
@@ -165,13 +166,13 @@ rare_curves <- function(all_data){
     ggsave("figures/figure_s2.pdf", rare_curves_plot, width = 18.2, height = 18.2, units = "cm")
 }
 
-datasets_to_phyloseq <- function(asv_table, tax_table, phy_tree, env_data){
+datasets_to_phyloseq <- function(asv_table, taxo_table, phy_tree, env_data){
     print(head(asv_table))
-    print(head(tax_table))
+    print(head(taxo_table))
     print(head(env_data))
     asv_table_ps <- otu_table(asv_table, taxa_are_rows = TRUE)
     env_data_ps <- sample_data(env_data)
-    tax_table_ps <- tax_table(tax_table)
+    tax_table_ps <- tax_table(taxo_table)
     phy_tree_ps <- phy_tree(phy_tree)
     all_data <- merge_phyloseq(asv_table_ps, env_data_ps, tax_table_ps, phy_tree_ps)
     
@@ -183,15 +184,15 @@ datasets_to_phyloseq <- function(asv_table, tax_table, phy_tree, env_data){
 
     # Validation and taxonomy fixes
     all_data_validated <- phyloseq_validate(all_data, remove_undetected = TRUE)
-    all_data_validated  <- tax_fix(all_data_validated, # fix taxonomy
+    all_data_validated_fixed  <- tax_fix(all_data_validated, # fix taxonomy
                         min_length = 4,
                         unknowns = c("uncultured","Incertae_Sedis", "Unknown_Family"),
                         sep = " ", anon_unique = TRUE,
                         suffix_rank = "classified")
     
-    rare_curves(all_data_validated)
+    #rare_curves(all_data_validated_fixed)
     
-    return(all_data)
+    return(all_data_validated_fixed)
     }
 
 add_alpha_to_env <- function(phyloseq_data){
@@ -205,6 +206,13 @@ add_alpha_to_env <- function(phyloseq_data){
   sample_data(phyloseq_data) <- alpha_data
   env_alpha_data <- data.frame(sample_data(phyloseq_data))
   return(env_alpha_data)
+}
+
+create_tables_files <- function(phyloseq_data){
+  filtered_table = otu_table(phyloseq_data)
+  taxo_table = tax_table(phyloseq_data)
+  write.table(filtered_table, file='data/filtered_asv_table.tsv', quote = F, sep = '\t')
+  write.table(taxo_table, file='data/filtered_tax_table.tsv', quote = F, sep = '\t')
 }
 
 ##########################################################
@@ -221,7 +229,6 @@ p3 = ggplot(env_data_with_alpha, aes(x=Layer, y=logPD)) + geom_boxplot(outlier.s
 }
 
 alpha_gams <- function(env_data_with_alpha){
-~~# Full model:::
   mod_nasv_full = gam(logASV_number ~ Vegetation +
                         s(pH, bs='tp', k=6) + s(logSal, bs='tp', k=6) + s(logN, bs='tp', k=6) + 
                         s(logC, bs='tp', k=6) + s(logMoist, bs='tp', k=6) + s(logTemp, bs='tp', k=6), 
@@ -264,9 +271,9 @@ draw(mod_pd_full, residuals = T, select = 's(logC)')
 ####### 6. Main function      ############################ 
 ##########################################################
 main <- function(){
-  dir.create('stats')
-  dir.create('figures')
-  dir.create('data')
+  #dir.create('stats')
+  #dir.create('figures')
+  #dir.create('data')
   
   # Data loading and preprocessing
   print('loading microbial data...')
@@ -282,6 +289,9 @@ main <- function(){
   phyloseq_data = datasets_to_phyloseq(asv_table, tax_table, phy_tree, env_data)
   env_data_with_alpha = add_alpha_to_env(phyloseq_data)
   write.csv(env_data_with_alpha, file='data/env_with_alpha.csv', quote = F, row.names = F, sep = ',')
+
+  print('creating tsv tables...')
+  create_tables_files(phyloseq_data)
     
   # Alpha diversity analyses --> GAMs (4x3, Observed, Shannon, PD)
     
